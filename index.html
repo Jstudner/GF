@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Visit Gravity Falls</title>
+<link rel="icon" type="image/png" href="favicon.png">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100%;
+      background: black;
+      font-family: 'Courier New', Courier, monospace;
+      touch-action: none; /* prevent scroll during touch */
+    }
+
+    #symbols-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+   .symbol {
+  position: absolute;
+  color: white;
+  font-family: monospace;
+  pointer-events: none;
+  opacity: 0.7;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes float-up {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-100vh); }
+}
+
+@keyframes float-down {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes float-left {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-100vw); }
+}
+
+@keyframes float-right {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(100vw); }
+}
+
+@keyframes float-up-left {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-100vw, -100vh); }
+}
+
+@keyframes float-up-right {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(100vw, -100vh); }
+}
+
+@keyframes float-down-left {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-100vw, 100vh); }
+}
+
+@keyframes float-down-right {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(100vw, 100vh); }
+}
+
+.float-up      { animation-name: float-up; }
+.float-down    { animation-name: float-down; }
+.float-left    { animation-name: float-left; }
+.float-right   { animation-name: float-right; }
+.float-up-left     { animation-name: float-up-left; }
+.float-up-right    { animation-name: float-up-right; }
+.float-down-left   { animation-name: float-down-left; }
+.float-down-right  { animation-name: float-down-right; }
+
+
+    canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    .btn {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 3;
+      padding: 10px 20px;
+      background: white;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    .btn.active {
+      background: #4CAF50;
+    }
+
+    #magnifierCanvas {
+      position: fixed;
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      overflow: hidden;
+      z-index: 2;
+      display: none;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="symbols-layer"></div>
+  <button class="btn" id="foldBtn" onclick="toggleFold()">Fold</button>
+  <button class="btn" id="magnifyBtn" style="left: 100px;" onclick="toggleMagnifier()">Magnify</button>
+  <button class="btn" id="printBtn" style="left: 200px;" onclick="downloadPDF()">Print</button>
+  <canvas id="magnifierCanvas"></canvas>
+  <audio id="flipSound" src="flip.mp3"></audio>
+  <audio id="bgAudio" src="ambient.mp3" loop></audio>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+  <script>
+    let scene, camera, renderer, brochure;
+    let leftPanel, centerPanel, rightPanel;
+    let leftPivot, rightPivot;
+    let isFolded = false;
+    let textures = {};
+    let isDragging = false;
+    let previousMouse = { x: 0, y: 0 };
+    let previousTouch = { x: 0, y: 0 };
+    let hasInteracted = false;
+    let magnifierActive = false;
+    let magnifierCanvas = document.getElementById('magnifierCanvas');
+    let magnifierRenderer, magnifierCamera, renderTarget;
+    let mouse = new THREE.Vector2();
+
+    init();
+    createFloatingSymbols();
+
+    function init() {
+      scene = new THREE.Scene();
+      const aspect = window.innerWidth / window.innerHeight;
+      camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
+      camera.position.set(0, 0, 10);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const panelWidth = 2.76;
+      const panelHeight = 5.8;
+      const panelDepth = 0.025;
+      const geometry = new THREE.BoxGeometry(panelWidth, panelHeight, panelDepth);
+      const loader = new THREE.TextureLoader();
+
+      loader.load('front3.jpg', tex => {
+        textures.front3 = tex;
+        loader.load('front2.jpg', tex => {
+          textures.front2 = tex;
+          loader.load('front1.jpg', tex => {
+            textures.front1 = tex;
+            loader.load('back3.jpg', tex => {
+              textures.back3 = tex;
+              loader.load('back2.jpg', tex => {
+                textures.back2 = tex;
+                loader.load('back1.jpg', tex => {
+                  textures.back1 = tex;
+                  createPanels(geometry);
+                  setupControls();
+                  setupMagnifier();
+                  animate();
+                });
+              });
+            });
+          });
+        });
+      });
+    }
+
+    function createPanels(geometry) {
+      const beige = new THREE.MeshBasicMaterial({ color: 0xF5F5DC });
+      const materialsLeft = [beige, beige, beige, beige,
+        new THREE.MeshBasicMaterial({ map: textures.front1 }),
+        new THREE.MeshBasicMaterial({ map: textures.back1 })];
+      const materialsCenter = [beige, beige, beige, beige,
+        new THREE.MeshBasicMaterial({ map: textures.back2 }),
+        new THREE.MeshBasicMaterial({ map: textures.front2 })];
+      const materialsRight = [beige, beige, beige, beige,
+        new THREE.MeshBasicMaterial({ map: textures.front3 }),
+        new THREE.MeshBasicMaterial({ map: textures.back3 })];
+
+      leftPivot = new THREE.Object3D();
+      leftPivot.position.x = -2.76 / 2;
+      leftPanel = new THREE.Mesh(geometry, materialsLeft);
+      leftPanel.position.x = 2.76 / 2;
+      leftPivot.add(leftPanel);
+
+      centerPanel = new THREE.Mesh(geometry, materialsCenter);
+
+      rightPivot = new THREE.Object3D();
+      rightPivot.position.x = 2.76 / 2;
+      rightPanel = new THREE.Mesh(geometry, materialsRight);
+      rightPanel.position.x = -2.76 / 2;
+      rightPivot.add(rightPanel);
+
+      brochure = new THREE.Group();
+      brochure.add(centerPanel);
+      brochure.add(leftPivot);
+      brochure.add(rightPivot);
+      scene.add(brochure);
+    }
+
+    function toggleFold() {
+  isFolded = !isFolded;
+  toggleButtonState('foldBtn');
+  // Play the flip sound when the fold button is clicked
+  document.getElementById('flipSound').play();
+}
+
+
+    function setupMagnifier() {
+      renderTarget = new THREE.WebGLRenderTarget(1024, 1024);
+      magnifierRenderer = new THREE.WebGLRenderer({ canvas: magnifierCanvas });
+      magnifierRenderer.setSize(200, 200);
+      magnifierCamera = new THREE.PerspectiveCamera(5, 1, 0.1, 1000);
+      magnifierCamera.position.z = 2;
+    }
+
+    function toggleMagnifier() {
+      magnifierActive = !magnifierActive;
+      magnifierCanvas.style.display = magnifierActive ? 'block' : 'none';
+      toggleButtonState('magnifyBtn');
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const maxAngle = Math.PI - THREE.MathUtils.degToRad(10);
+      const minAngle = THREE.MathUtils.degToRad(10);
+      const targetAngle = isFolded ? maxAngle : minAngle;
+      const leftTarget = -targetAngle;
+      const rightTarget = -targetAngle;
+
+      if (leftPivot && rightPivot) {
+        leftPivot.rotation.y += (leftTarget - leftPivot.rotation.y) * 0.1;
+        rightPivot.rotation.y += (rightTarget - rightPivot.rotation.y) * 0.1;
+      }
+
+      if (!hasInteracted) brochure.rotation.y += 0.003;
+      camera.lookAt(brochure.position);
+      renderer.render(scene, camera);
+
+      if (magnifierActive) {
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObject(brochure, true);
+
+        if (intersects.length > 0) {
+          const point = intersects[0].point.clone();
+          magnifierCamera.position.copy(camera.position);
+          magnifierCamera.rotation.copy(camera.rotation);
+          magnifierCamera.position.add(point.clone().sub(magnifierCamera.position).normalize().multiplyScalar(1.5));
+          magnifierCamera.lookAt(point);
+          magnifierRenderer.render(scene, magnifierCamera);
+          magnifierCanvas.style.display = 'block';
+        } else {
+          magnifierCanvas.style.display = 'none';
+        }
+      }
+    }
+
+    function setupControls() {
+let bgAudioPlayed = false;
+const bgAudio = document.getElementById('bgAudio');
+bgAudio.volume = 0.05; // Very faint volume
+      renderer.domElement.addEventListener('mousemove', e => {
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        if (magnifierActive) {
+          magnifierCanvas.style.left = `${e.clientX - 75}px`;
+	  magnifierCanvas.style.top = `${e.clientY - 75}px`;
+
+        }
+      });
+
+      renderer.domElement.addEventListener('mousedown', e => {
+        isDragging = true;
+        previousMouse.x = e.clientX;
+        previousMouse.y = e.clientY;
+        document.body.style.cursor = 'grabbing';
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+        document.body.style.cursor = 'grab';
+      });
+
+      renderer.domElement.addEventListener('mousemove', e => {
+        if (isDragging) {
+          const deltaX = e.clientX - previousMouse.x;
+          const deltaY = e.clientY - previousMouse.y;
+          previousMouse.x = e.clientX;
+          previousMouse.y = e.clientY;
+
+          brochure.rotation.y += deltaX * 0.005;
+          brochure.rotation.x += deltaY * 0.005;
+          brochure.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, brochure.rotation.x));
+          if (!bgAudioPlayed) {
+  bgAudio.play();
+  bgAudioPlayed = true;
+}
+
+hasInteracted = true;
+        }
+      });
+
+      // Mobile touch support
+      renderer.domElement.addEventListener('touchstart', e => {
+        if (e.touches.length === 1) {
+          previousTouch.x = e.touches[0].clientX;
+          previousTouch.y = e.touches[0].clientY;
+          isDragging = true;
+        }
+      });
+
+      renderer.domElement.addEventListener('touchmove', e => {
+        if (isDragging && e.touches.length === 1) {
+          const deltaX = e.touches[0].clientX - previousTouch.x;
+          const deltaY = e.touches[0].clientY - previousTouch.y;
+          previousTouch.x = e.touches[0].clientX;
+          previousTouch.y = e.touches[0].clientY;
+
+          brochure.rotation.y += deltaX * 0.005;
+          brochure.rotation.x += deltaY * 0.005;
+          brochure.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, brochure.rotation.x));
+          if (!bgAudioPlayed) {
+  bgAudio.play();
+  bgAudioPlayed = true;
+}
+
+hasInteracted = true;
+        }
+      });
+
+      renderer.domElement.addEventListener('touchend', () => {
+        isDragging = false;
+      });
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+
+    function toggleButtonState(id) {
+  const btn = document.getElementById(id);
+  if (id === 'foldBtn') btn.classList.toggle('active', isFolded);
+  if (id === 'magnifyBtn') btn.classList.toggle('active', magnifierActive);
+}
+
+    function downloadPDF() {
+      const link = document.createElement('a');
+      link.href = 'gfbrochure.pdf';
+      link.download = 'gfbrochure.pdf';
+      link.click();
+    }
+
+    function createFloatingSymbols() {
+  const symbolsLayer = document.getElementById('symbols-layer');
+  const numSymbols = 30;
+
+  for (let i = 0; i < numSymbols; i++) {
+    const span = document.createElement('span');
+span.classList.add('symbol');
+span.textContent = generateRandomSymbol();
+span.style.fontSize = `${Math.random() * 90 + 10}px`; 
+span.style.left = `${Math.random() * window.innerWidth}px`;
+span.style.top = `${Math.random() * window.innerHeight}px`;
+span.velocityX = Math.random() * 1 + 0.5;
+span.velocityY = Math.random() * 1 + 0.5;
+symbolsLayer.appendChild(span);
+animateSymbol(span);
+  }
+}
+
+function generateRandomSymbol() {
+  const symbols = ['𓂀', '☉', '☽', '♆', '✡', '𓆏', 'O', '𓂓', '☥', '⚚', '⟁', '⌖', '⛧','𓂀', '𓆣', '𓊽', '𓋹', '𓂓', '𓅓', '𓎼', '𓊝','☉', '☽', '☿', '♁', '♂', '♀', '♃', '♄', '♅', '♆', '♇','ᛉ', 'ᛟ', 'ᚨ', 'ᚾ', 'ᚱ', 'ᛏ', 'ᛇ', 'ᚷ', 'ᛒ', 'ᚲ','₪', '₡', '₵', '₫', '₭', '₦', '₱', '₲', '₮', '₯','☌', '☍', '☊', '☋'];
+  return symbols[Math.floor(Math.random() * symbols.length)];
+}
+
+
+function animateSymbol(element) {
+  const update = () => {
+    let x = parseFloat(element.style.left);
+    let y = parseFloat(element.style.top);
+
+    x += element.velocityX;
+    y += element.velocityY;
+
+    // Bounce on edges
+    if (x <= 0 || x >= window.innerWidth - element.offsetWidth) {
+      element.velocityX *= -1;
+    }
+    if (y <= 0 || y >= window.innerHeight - element.offsetHeight) {
+      element.velocityY *= -1;
+    }
+
+   element.style.left = `${x}px`;
+element.style.top = `${y}px`;
+requestAnimationFrame(update);
+
+  };
+  requestAnimationFrame(update);
+    }
+    for (let i = 0; i < 40; i++) {
+      const symbol = document.createElement('div');
+      symbol.className = 'symbol';
+      symbol.textContent = symbols[Math.floor(Math.random() * symbols.length)];
+
+      symbol.style.left = Math.random() * 100 + 'vw';
+      symbol.style.top = Math.random() * 100 + 'vh';
+      symbol.style.fontSize = (Math.random() * 1.5 + 1) + 'rem';
+
+      const directions = ['float-up', 'float-down', 'float-left', 'float-right', 'float-up-left', 'float-up-right', 'float-down-left', 'float-down-right'];
+      const animationClass = directions[Math.floor(Math.random() * directions.length)];
+      symbol.classList.add(animationClass);
+
+      symbol.style.animationDuration = (Math.random() * 10 + 10) + 's';
+      symbol.style.animationDelay = Math.random() * 5 + 's';
+      symbol.style.textShadow = '0 0 6px rgba(255, 255, 255, 0.8)';
+
+      document.body.appendChild(symbol);
+    }
+  </script>
+</body>
+</html>
