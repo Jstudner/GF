@@ -132,6 +132,7 @@
   <canvas id="magnifierCanvas"></canvas>
   <audio id="flipSound" src="flip.mp3"></audio>
   <audio id="bgAudio" src="ambient.mp3" loop></audio>
+  <audio id="magnifySound" src="magnify.mp3"></audio>
   <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
   <script>
     let scene, camera, renderer, brochure;
@@ -224,12 +225,13 @@
       scene.add(brochure);
     }
 
-    function toggleFold() {
+function toggleFold() {
   isFolded = !isFolded;
   toggleButtonState('foldBtn');
-  // Play the flip sound when the fold button is clicked
   document.getElementById('flipSound').play();
+  document.getElementById('magnifySound').play();
 }
+
 
 
     function setupMagnifier() {
@@ -241,10 +243,16 @@
     }
 
     function toggleMagnifier() {
-      magnifierActive = !magnifierActive;
-      magnifierCanvas.style.display = magnifierActive ? 'block' : 'none';
-      toggleButtonState('magnifyBtn');
-    }
+  magnifierActive = !magnifierActive;
+  magnifierCanvas.style.display = magnifierActive ? 'block' : 'none';
+  toggleButtonState('magnifyBtn');
+
+  // Play the magnify sound
+  const sound = document.getElementById('magnifySound');
+  sound.currentTime = 0; // rewind to start
+  sound.play();
+}
+
 
     function animate() {
       requestAnimationFrame(animate);
@@ -373,12 +381,14 @@ hasInteracted = true;
   if (id === 'magnifyBtn') btn.classList.toggle('active', magnifierActive);
 }
 
-    function downloadPDF() {
-      const link = document.createElement('a');
-      link.href = 'gfbrochure.pdf';
-      link.download = 'gfbrochure.pdf';
-      link.click();
-    }
+   function downloadPDF() {
+  document.getElementById('magnifySound').play();
+  const link = document.createElement('a');
+  link.href = 'gfbrochure.pdf';
+  link.download = 'gfbrochure.pdf';
+  link.click();
+}
+
 
     function createFloatingSymbols() {
   const symbolsLayer = document.getElementById('symbols-layer');
