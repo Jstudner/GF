@@ -1,1 +1,1 @@
-you can veiw the site here: http://visitgravityfalls.com 
+you can veiw the site here: http://visitgravityfalls.jcorptech.net
